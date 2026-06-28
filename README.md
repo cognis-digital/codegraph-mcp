@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/cognis-digital/codegraph-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/cognis-digital/codegraph-mcp/actions/workflows/ci.yml)
 
+> Part of the **[Accountable AI Engineering suite](https://github.com/cognis-digital/accountable-ai-suite)** — provable governance for AI agents on infrastructure you own.
+
 **A no-train, on-prem code knowledge graph that you serve to AI agents over MCP — with a hash-chained audit row for every read.**
 
 AI coding agents are only as good as the code understanding you can hand them. The cloud assistants solve this by ingesting your repositories into their own infrastructure — which is a non-starter for any team whose code can't leave the building. `codegraph-mcp` gives those teams the same structural code intelligence **without the trust trade-off**:
