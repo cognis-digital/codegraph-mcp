@@ -42,6 +42,7 @@ pip install -e .          # or just run via `python -m codegraph`
 # 1. Index any repo (a local path, or a git URL it clones read-only)
 codegraph index ./examples/sample_repo --db graph.db
 codegraph index https://github.com/your-org/your-service.git --db graph.db
+codegraph index . --since HEAD~1 --db graph.db   # incremental: only what changed
 
 # 2. Query the graph
 codegraph query search loadUser --db graph.db
@@ -156,11 +157,11 @@ The overlay model is the wedge: you get the indexed graph and the audit trail **
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 47 tests
+pytest -q          # 50 tests
 ```
 
 ## License
 
 Apache-2.0. © Cognis Digital.
 
-> Status: v0.1 — runnable and tested. HTTP transport, KG diff, and the project-graph view are shipped. Roadmap: more languages (Ruby, Kotlin, PHP) and incremental per-commit indexing.
+> Status: v0.1 — runnable and tested. HTTP transport, KG diff, project-graph, and incremental (`--since`) indexing are shipped. Roadmap: more languages (Ruby, Kotlin, PHP) and a watch mode.

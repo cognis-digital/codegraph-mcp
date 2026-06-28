@@ -18,7 +18,7 @@ from pathlib import Path
 from . import __version__
 from .diff import diff_git, diff_paths
 from .graph import Store
-from .indexer import index_git, index_path
+from .indexer import index_git, index_incremental, index_path
 from .mcp_server import MCPServer
 from .tokens import TokenStore
 
@@ -37,7 +37,9 @@ def cmd_index(args) -> int:
     store = _store(args)
     try:
         target = args.target
-        if target.startswith(("http://", "https://", "git@")) or target.endswith(".git"):
+        if args.since:
+            stats = index_incremental(store, target, args.since, args.ref or "HEAD")
+        elif target.startswith(("http://", "https://", "git@")) or target.endswith(".git"):
             stats = index_git(store, target, ref=args.ref)
         else:
             stats = index_path(store, target)
@@ -177,7 +179,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     pi = sub.add_parser("index", parents=[db_parent], help="index a path or git URL")
     pi.add_argument("target")
-    pi.add_argument("--ref", default=None, help="branch/tag when indexing a git URL")
+    pi.add_argument("--ref", default=None, help="branch/tag/ref (git URL, or HEAD for --since)")
+    pi.add_argument("--since", default=None, metavar="BASE_REF",
+                    help="incremental: re-index only files changed since BASE_REF (local git repo)")
     pi.set_defaults(func=cmd_index)
 
     ps = sub.add_parser("stats", parents=[db_parent], help="show graph statistics")

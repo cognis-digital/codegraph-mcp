@@ -64,6 +64,80 @@ class IndexStats:
         }
 
 
+def _ingest_file(store: Store, root: Path, path: Path, stats: IndexStats) -> None:
+    """Parse one file and write its symbols, refs, and endpoints (no edges).
+
+    Idempotent: a file whose content SHA is unchanged since last index is
+    skipped. Edge resolution is global and happens once, in `rebuild_edges`.
+    """
+    lang = language_for(path)
+    ext = extractor_for(lang) if lang else None
+    if not ext:
+        stats.skipped += 1
+        return
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        stats.skipped += 1
+        return
+
+    rel = str(path.relative_to(root)).replace(os.sep, "/")
+    sha = _sha(text)
+    if store.get_meta(f"file_sha:{rel}") == sha:
+        return  # unchanged since last index
+    store.reset_file(rel, commit=False)
+
+    result = ext.extract(text)
+    file_id = store.add_file(rel, lang, sha, time.time())
+    store.set_meta(f"file_sha:{rel}", sha, commit=False)
+    stats.files += 1
+
+    local_syms: dict[str, int] = {}
+    for sym in result.symbols:
+        sid = store.add_symbol(
+            file_id, sym.name, sym.kind, lang, sym.start_line, sym.end_line,
+            container=sym.container, signature=sym.signature,
+        )
+        stats.symbols += 1
+        qual = f"{sym.container}.{sym.name}" if sym.container else sym.name
+        local_syms[qual] = sid
+        local_syms.setdefault(sym.name, sid)
+
+    for ref in result.refs:
+        in_sym = local_syms.get(ref.in_symbol) if ref.in_symbol else None
+        store.add_ref(file_id, ref.name, ref.line, in_sym)
+
+    for ep in result.endpoints:
+        sid = local_syms.get(ep.in_symbol) if ep.in_symbol else None
+        if sid is not None:
+            store.add_endpoint(sid, ep.role, ep.method, ep.route)
+            stats.endpoints += 1
+
+
+def rebuild_edges(store: Store) -> int:
+    """Recompute all edges from the symbols/refs tables. Returns cross-lang count.
+
+    Call edges are derived from references: a reference recorded inside symbol
+    S to a name N becomes an edge S -> every symbol named N. Doing this from the
+    tables (rather than in-memory during parse) is what lets incremental
+    indexing touch only changed files yet keep the global call graph correct.
+    """
+    store.conn.execute("DELETE FROM edges")
+
+    name_ids: dict[str, list[int]] = {}
+    for sid, name in store.conn.execute("SELECT id, name FROM symbols"):
+        name_ids.setdefault(name, []).append(sid)
+
+    for src_id, name in store.conn.execute(
+        "SELECT in_symbol, name FROM refs WHERE in_symbol IS NOT NULL"
+    ):
+        for dst_id in name_ids.get(name, []):
+            if dst_id != src_id:
+                store.add_edge(src_id, dst_id, "calls")
+    store.commit()
+    return crosslang.resolve(store)
+
+
 def index_path(store: Store, root: str | Path, actor: str = "indexer") -> IndexStats:
     """Index a directory tree into `store`. Idempotent per file (by content SHA)."""
     root = Path(root).resolve()
@@ -71,80 +145,65 @@ def index_path(store: Store, root: str | Path, actor: str = "indexer") -> IndexS
     if not root.exists():
         raise FileNotFoundError(root)
 
-    # qualname -> symbol_id, populated as we insert, used to resolve edges
-    sym_index: dict[str, list[int]] = {}
-    pending_calls: list[tuple[int, list[str]]] = []
-    pending_endpoints: list[tuple[str, object]] = []  # (qualname, RawEndpoint)
-
     for path in iter_source_files(root):
-        lang = language_for(path)
-        ext = extractor_for(lang) if lang else None
-        if not ext:
-            stats.skipped += 1
-            continue
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            stats.skipped += 1
-            continue
-
-        rel = str(path.relative_to(root)).replace(os.sep, "/")
-        sha = _sha(text)
-        existing = store.get_meta(f"file_sha:{rel}")
-        if existing == sha:
-            continue  # unchanged since last index
-        store.reset_file(rel, commit=False)
-
-        result = ext.extract(text)
-        file_id = store.add_file(rel, lang, sha, time.time())
-        store.set_meta(f"file_sha:{rel}", sha, commit=False)
-        stats.files += 1
-
-        local_syms: dict[str, int] = {}
-        for sym in result.symbols:
-            sid = store.add_symbol(
-                file_id, sym.name, sym.kind, lang, sym.start_line, sym.end_line,
-                container=sym.container, signature=sym.signature,
-            )
-            stats.symbols += 1
-            qual = f"{sym.container}.{sym.name}" if sym.container else sym.name
-            local_syms[qual] = sid
-            local_syms.setdefault(sym.name, sid)
-            sym_index.setdefault(qual, []).append(sid)
-            sym_index.setdefault(sym.name, []).append(sid)
-            if sym.calls:
-                pending_calls.append((sid, sym.calls))
-
-        for ref in result.refs:
-            in_sym = local_syms.get(ref.in_symbol) if ref.in_symbol else None
-            store.add_ref(file_id, ref.name, ref.line, in_sym)
-
-        for ep in result.endpoints:
-            pending_endpoints.append((ep.in_symbol, ep))
-            sid = local_syms.get(ep.in_symbol) if ep.in_symbol else None
-            if sid is not None:
-                store.add_endpoint(sid, ep.role, ep.method, ep.route)
-                stats.endpoints += 1
-
+        _ingest_file(store, root, path, stats)
     store.commit()
 
-    # resolve intra-repo call edges by name (best-effort; ambiguous names link
-    # to all candidates, which is the conservative choice for impact analysis)
-    for src_id, calls in pending_calls:
-        for name in calls:
-            for dst_id in sym_index.get(name, []):
-                if dst_id != src_id:
-                    store.add_edge(src_id, dst_id, "calls")
+    stats.cross_edges = rebuild_edges(store)
+    store.audit.append(actor=actor, action="index", target=str(root),
+                       detail=stats.as_dict())
+    return stats
+
+
+def changed_files(repo: str | Path, base: str, head: str = "HEAD") -> tuple[list[str], list[str]]:
+    """Return (added_or_modified, deleted) paths between two git refs."""
+    out = subprocess.run(
+        ["git", "-C", str(repo), "diff", "--name-status", f"{base}..{head}"],
+        check=True, capture_output=True, text=True).stdout
+    am: list[str] = []
+    deleted: list[str] = []
+    for line in out.splitlines():
+        parts = line.split("\t")
+        status = parts[0]
+        if status.startswith("D"):
+            deleted.append(parts[-1])
+        elif status.startswith("R"):  # rename: old path gone, new path added
+            deleted.append(parts[1])
+            am.append(parts[2])
+        else:  # A, M, C, T ...
+            am.append(parts[-1])
+    return am, deleted
+
+
+def index_incremental(store: Store, root: str | Path, base: str, head: str = "HEAD",
+                      actor: str = "indexer") -> IndexStats:
+    """Re-index only the files changed between two git refs, then rebuild edges.
+
+    Added/modified files are re-parsed from the working tree; deleted files are
+    dropped from the graph. Parsing is skipped for everything unchanged — the
+    whole point — while the call/cross-language graph stays correct because
+    edges are recomputed globally from the tables afterward.
+    """
+    root = Path(root).resolve()
+    stats = IndexStats()
+    am, deleted = changed_files(root, base, head)
+
+    for rel in deleted:
+        store.reset_file(rel.replace(os.sep, "/"), commit=False)
+        store.conn.execute("DELETE FROM meta WHERE key=?", (f"file_sha:{rel}",))
+
+    for rel in am:
+        path = root / rel
+        if not path.exists():  # modified-then-deleted in the working tree
+            store.reset_file(rel.replace(os.sep, "/"), commit=False)
+            continue
+        _ingest_file(store, root, path, stats)
     store.commit()
 
-    stats.cross_edges = crosslang.resolve(store)
-
-    store.audit.append(
-        actor=actor,
-        action="index",
-        target=str(root),
-        detail=stats.as_dict(),
-    )
+    stats.cross_edges = rebuild_edges(store)
+    store.audit.append(actor=actor, action="index_incremental",
+                       target=f"{base}..{head}",
+                       detail={**stats.as_dict(), "deleted": len(deleted)})
     return stats
 
 
