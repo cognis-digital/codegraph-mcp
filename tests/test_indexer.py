@@ -12,13 +12,11 @@ def build():
     return store, stats
 
 
-def test_indexes_four_languages():
+def test_indexes_six_languages():
     store, stats = build()
     s = store.stats()
-    assert s["languages"].get("python", 0) >= 1
-    assert s["languages"].get("typescript", 0) >= 1
-    assert s["languages"].get("go", 0) >= 1
-    assert s["languages"].get("rust", 0) >= 1
+    for lang in ("python", "typescript", "go", "rust", "java", "csharp"):
+        assert s["languages"].get(lang, 0) >= 1, f"missing {lang}"
     assert stats.symbols > 0
 
 
@@ -51,8 +49,8 @@ def test_cross_language_reaches_all_backends():
     store, _ = build()
     edges = store.cross_language_edges()
     reached = {e["to"]["lang"] for e in edges if e["from"]["symbol"] == "loadUser"}
-    # loadUser hits the same route served in Go, Python, and Rust
-    assert {"python", "go", "rust"} <= reached
+    # loadUser hits the same route served in five other languages
+    assert {"python", "go", "rust", "java", "csharp"} <= reached
 
 
 def test_impact_includes_cross_language_caller():

@@ -125,6 +125,61 @@ def test_rust_extractor_funcs_types_and_routes():
     assert any(e.role == "server" and e.route == "/api/users/{id}" for e in res.endpoints)
 
 
+def test_java_extractor_methods_and_spring_routes():
+    src = (
+        "@RestController\n"
+        "public class UserController {\n"
+        "  @GetMapping(\"/api/users/{id}\")\n"
+        "  public User getUser(String id) {\n"
+        "    return lookup(id);\n"
+        "  }\n"
+        "  private User lookup(String id) {\n"
+        "    return new User(id);\n"
+        "  }\n"
+        "}\n"
+    )
+    res = extractor_for("java").extract(src)
+    by_name = {s.name: s for s in res.symbols}
+    assert "UserController" in by_name and by_name["UserController"].kind == "class"
+    assert "getUser" in by_name and by_name["getUser"].kind == "method"
+    assert "lookup" in by_name["getUser"].calls
+    # the @GetMapping annotation binds to the method that follows it
+    server = [e for e in res.endpoints if e.role == "server"]
+    assert any(e.route == "/api/users/{id}" and e.in_symbol == "getUser" for e in server)
+
+
+def test_csharp_extractor_methods_and_aspnet_routes():
+    src = (
+        "public class UsersController : ControllerBase {\n"
+        "  [HttpGet(\"/api/users/{id}\")]\n"
+        "  public User GetUser(string id) {\n"
+        "    return Lookup(id);\n"
+        "  }\n"
+        "  private User Lookup(string id) {\n"
+        "    return new User(id);\n"
+        "  }\n"
+        "}\n"
+    )
+    res = extractor_for("csharp").extract(src)
+    by_name = {s.name: s for s in res.symbols}
+    assert "UsersController" in by_name
+    assert "GetUser" in by_name and "Lookup" in by_name["GetUser"].calls
+    assert any(e.role == "server" and e.route == "/api/users/{id}"
+               and e.in_symbol == "GetUser" for e in res.endpoints)
+
+
+def test_csharp_client_route_in_body():
+    src = (
+        "public class Client {\n"
+        "  public async Task Fetch() {\n"
+        "    await http.GetAsync(\"/api/users/1\");\n"
+        "  }\n"
+        "}\n"
+    )
+    res = extractor_for("csharp").extract(src)
+    assert any(e.role == "client" and e.route.startswith("/api/users") for e in res.endpoints)
+
+
 def test_brace_scan_ignores_braces_in_strings():
     src = (
         "function f() {\n"

@@ -100,8 +100,10 @@ The server speaks plain JSON-RPC 2.0 over stdio — no proprietary transport, no
 | JavaScript / TypeScript | regex + brace scan | ✓ | ✓ | ✓ (`fetch`/`axios` + `app`/`router`) |
 | Go | regex + brace scan | ✓ | ✓ | ✓ (`HandleFunc`/gin/echo + `http.Get`) |
 | Rust | regex + brace scan | ✓ | ✓ | ✓ (axum `.route` + `reqwest`) |
+| Java | regex + brace scan | ✓ | ✓ | ✓ (Spring `@GetMapping` + RestTemplate/WebClient) |
+| C# | regex + brace scan | ✓ | ✓ | ✓ (ASP.NET `[HttpGet]`/`[Route]` + HttpClient) |
 
-Four languages, with cross-language edges resolved between any of them. The extractor interface is language-agnostic; adding a language (or swapping in a tree-sitter backend for one) doesn't touch the indexer or the graph.
+**Six languages, with cross-language edges resolved between any of them** — a single TypeScript `fetch('/api/users/:id')` resolves to the Python, Go, Rust, Java, *and* C# handlers serving that route. The extractor interface is language-agnostic; adding a language (or swapping in a tree-sitter backend for one) doesn't touch the indexer or the graph.
 
 ## Benchmark
 
@@ -131,7 +133,7 @@ Cloud code assistants give you great comprehension but require sending your code
 | Used to train a model | often | sometimes | **never** |
 | Requires migrating your hosting | no | **yes** | **no — overlays existing repos** |
 | Tamper-evident audit of agent reads | no | roadmap | **shipped** |
-| Cross-language dependency graph | partial | Go + TS | **Python · JS/TS · Go · Rust** |
+| Cross-language dependency graph | partial | Go + TS | **6 langs: Py · JS/TS · Go · Rust · Java · C#** |
 | Runs air-gapped | no | heavy (DB + services) | **single file, stdlib + SQLite** |
 | Published benchmark | — | none | **yes (reproducible)** |
 
@@ -141,11 +143,11 @@ The overlay model is the wedge: you get the indexed graph and the audit trail **
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 33 tests
+pytest -q          # 36 tests
 ```
 
 ## License
 
 Apache-2.0. © Cognis Digital.
 
-> Status: v0.1 — runnable and tested. Roadmap: more languages (Java, C#, Ruby), incremental per-commit indexing, project-graph (module/package) view, and an optional HTTP/SSE transport alongside stdio.
+> Status: v0.1 — runnable and tested. Roadmap: more languages (Ruby, Kotlin, PHP), incremental per-commit indexing, project-graph (module/package) view, and an optional HTTP/SSE transport alongside stdio.

@@ -24,6 +24,9 @@ _CALL_KEYWORDS = {
     # rust
     "fn", "impl", "match", "let", "mut", "pub", "unsafe", "move", "dyn",
     "as", "where", "loop", "use", "mod", "ref",
+    # java / c#
+    "throw", "throws", "using", "lock", "foreach", "instanceof",
+    "synchronized", "this", "super", "base", "sizeof", "nameof",
 }
 
 
@@ -98,11 +101,21 @@ class _BraceExtractor(Extractor):
     def_patterns: List[Tuple[str, re.Pattern]] = []
 
     def _routes(self, body: str, qual: str, base_line: int) -> List[RawEndpoint]:
+        """Routes found *inside* a symbol body (client calls, axum builders)."""
+        return []
+
+    def _annotation_routes(self, text: str) -> List[Tuple[int, str, str]]:
+        """Routes declared as an annotation/attribute *before* a method.
+
+        Returns (char_position, http_method, route); the engine attaches each to
+        the next method symbol after that position (Spring `@GetMapping`,
+        ASP.NET `[HttpGet]`, etc.).
+        """
         return []
 
     def extract(self, text: str) -> ExtractResult:
         result = ExtractResult()
-        claimed: List[Tuple[int, int]] = []  # (start_idx, end_idx) of nested bodies
+        sym_positions: List[Tuple[int, str]] = []  # (start_char, qualname)
 
         for kind, pat in self.def_patterns:
             for m in pat.finditer(text):
@@ -118,6 +131,7 @@ class _BraceExtractor(Extractor):
                         RawSymbol(name=name, kind=kind, start_line=start_line,
                                   end_line=start_line, signature=m.group(0).strip())
                     )
+                    sym_positions.append((m.start(), name))
                     continue
                 close, nl = _find_body(text, brace)
                 end_line = start_line + nl
@@ -130,11 +144,27 @@ class _BraceExtractor(Extractor):
                         signature=m.group(0).strip().rstrip("{").strip(), calls=calls,
                     )
                 )
+                sym_positions.append((m.start(), name))
                 for c in calls:
                     result.refs.append(RawRef(name=c, line=start_line, in_symbol=qual))
                 for ep in self._routes(body, qual, start_line):
                     result.endpoints.append(ep)
+
+        # attach annotation/attribute routes to the method that follows them
+        sym_positions.sort()
+        for pos, method, route in self._annotation_routes(text):
+            qual = self._symbol_after(sym_positions, pos)
+            if qual:
+                result.endpoints.append(
+                    RawEndpoint("server", method, route, _line_of(text, pos), qual))
         return result
+
+    @staticmethod
+    def _symbol_after(sym_positions: List[Tuple[int, str]], pos: int) -> str | None:
+        for start, name in sym_positions:
+            if start >= pos:
+                return name
+        return None
 
 
 class JsExtractor(_BraceExtractor):
@@ -201,6 +231,87 @@ class GoExtractor(_BraceExtractor):
             eps.append(RawEndpoint("client", m.group("m").upper(), m.group("route"),
                                    base_line + body.count("\n", 0, m.start()), qual))
         return eps
+
+
+class JavaExtractor(_BraceExtractor):
+    """Java: classes/interfaces/enums, methods, calls, and Spring MVC routes.
+
+    Server routes come from `@GetMapping("/x")` / `@RequestMapping(...)`
+    annotations (attached to the method that follows), and client routes from
+    RestTemplate/WebClient calls inside method bodies.
+    """
+
+    lang = "java"
+
+    def __init__(self):
+        self.def_patterns = [
+            ("class", re.compile(r"\b(?:class|interface|enum)\s+(?P<name>[A-Za-z_]\w*)")),
+            ("method", re.compile(
+                r"\b(?:public|private|protected)\s+"
+                r"(?:static\s+|final\s+|abstract\s+|synchronized\s+|native\s+|default\s+)*"
+                r"[\w<>\[\].,?\s]+?\s+(?P<name>[A-Za-z_]\w*)\s*\([^;{]*\)")),
+        ]
+
+    _MAPPING = re.compile(
+        r"@(?P<kind>Get|Post|Put|Delete|Patch|Request)Mapping\s*\(\s*"
+        r"(?:value\s*=\s*|path\s*=\s*)?\"(?P<route>/[^\"]*)\"")
+    _CLIENT = re.compile(
+        r"\.(?:getForObject|getForEntity|postForObject|postForEntity|exchange|uri)"
+        r"\s*\(\s*\"(?P<route>/[^\"]*)\"")
+
+    def _annotation_routes(self, text: str) -> List[Tuple[int, str, str]]:
+        out = []
+        for m in self._MAPPING.finditer(text):
+            kind = m.group("kind")
+            out.append((m.start(), "ANY" if kind == "Request" else kind.upper(),
+                        m.group("route")))
+        return out
+
+    def _routes(self, body: str, qual: str, base_line: int) -> List[RawEndpoint]:
+        return [RawEndpoint("client", "ANY", m.group("route"),
+                            base_line + body.count("\n", 0, m.start()), qual)
+                for m in self._CLIENT.finditer(body)]
+
+
+class CSharpExtractor(_BraceExtractor):
+    """C#: classes/structs/records, methods, calls, and ASP.NET routes.
+
+    Server routes come from `[HttpGet("/x")]` / `[Route("/x")]` attributes, and
+    client routes from HttpClient calls inside method bodies.
+    """
+
+    lang = "csharp"
+
+    def __init__(self):
+        self.def_patterns = [
+            ("class", re.compile(
+                r"\b(?:class|interface|struct|enum|record)\s+(?P<name>[A-Za-z_]\w*)")),
+            ("method", re.compile(
+                r"\b(?:public|private|protected|internal)\s+"
+                r"(?:static\s+|async\s+|virtual\s+|override\s+|sealed\s+|abstract\s+)*"
+                r"[\w<>\[\].,?\s]+?\s+(?P<name>[A-Za-z_]\w*)\s*\([^;{]*\)")),
+        ]
+
+    _ATTR = re.compile(
+        r"\[Http(?P<kind>Get|Post|Put|Delete|Patch)\s*\(\s*\"(?P<route>/[^\"]*)\"\s*\)\]"
+        r"|\[Route\s*\(\s*\"(?P<route2>/[^\"]*)\"\s*\)\]")
+    _CLIENT = re.compile(
+        r"\.(?:GetAsync|GetStringAsync|GetFromJsonAsync|PostAsync|PostAsJsonAsync|"
+        r"PutAsync|DeleteAsync)\s*\(\s*\"(?P<route>/[^\"]*)\"")
+
+    def _annotation_routes(self, text: str) -> List[Tuple[int, str, str]]:
+        out = []
+        for m in self._ATTR.finditer(text):
+            if m.group("route"):
+                out.append((m.start(), m.group("kind").upper(), m.group("route")))
+            elif m.group("route2"):
+                out.append((m.start(), "ANY", m.group("route2")))
+        return out
+
+    def _routes(self, body: str, qual: str, base_line: int) -> List[RawEndpoint]:
+        return [RawEndpoint("client", "ANY", m.group("route"),
+                            base_line + body.count("\n", 0, m.start()), qual)
+                for m in self._CLIENT.finditer(body)]
 
 
 class RustExtractor(_BraceExtractor):
