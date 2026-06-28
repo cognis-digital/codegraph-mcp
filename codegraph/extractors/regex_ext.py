@@ -21,6 +21,9 @@ _CALL_KEYWORDS = {
     "if", "for", "while", "switch", "catch", "return", "function", "await",
     "typeof", "new", "func", "go", "defer", "make", "len", "cap", "append",
     "print", "println", "panic", "recover", "range", "select", "case",
+    # rust
+    "fn", "impl", "match", "let", "mut", "pub", "unsafe", "move", "dyn",
+    "as", "where", "loop", "use", "mod", "ref",
 }
 
 
@@ -106,8 +109,11 @@ class _BraceExtractor(Extractor):
                 name = m.group("name")
                 start_line = _line_of(text, m.start())
                 brace = text.find("{", m.end() - 1)
-                if brace == -1:
-                    # e.g. an interface/type alias without a block on this line
+                semi = text.find(";", m.end() - 1)
+                if brace == -1 or (semi != -1 and semi < brace):
+                    # a declaration with no block body on this line: a trait/
+                    # interface method signature, a unit/tuple struct, a type
+                    # alias. Record the symbol but don't scan a (distant) brace.
                     result.symbols.append(
                         RawSymbol(name=name, kind=kind, start_line=start_line,
                                   end_line=start_line, signature=m.group(0).strip())
@@ -185,6 +191,39 @@ class GoExtractor(_BraceExtractor):
         r"[\"`](?P<route>/[^\"`]*)[\"`]")
     _CLIENT_RE = re.compile(
         r"\bhttp\.(?P<m>Get|Post|Put|Delete|Head)\s*\(\s*[\"`](?P<route>/[^\"`]*)[\"`]")
+
+    def _routes(self, body: str, qual: str, base_line: int) -> List[RawEndpoint]:
+        eps: List[RawEndpoint] = []
+        for m in self._SERVER_RE.finditer(body):
+            eps.append(RawEndpoint("server", "ANY", m.group("route"),
+                                   base_line + body.count("\n", 0, m.start()), qual))
+        for m in self._CLIENT_RE.finditer(body):
+            eps.append(RawEndpoint("client", m.group("m").upper(), m.group("route"),
+                                   base_line + body.count("\n", 0, m.start()), qual))
+        return eps
+
+
+class RustExtractor(_BraceExtractor):
+    """Rust: functions/methods, struct/enum/trait types, calls, and axum routes.
+
+    Web routes are recognized from the axum builder pattern
+    `.route("/path", get(handler))` (server) and `reqwest`-style client calls,
+    so Rust participates in cross-language edges alongside Go/TS/Python.
+    """
+
+    lang = "rust"
+
+    def __init__(self):
+        self.def_patterns = [
+            ("function", re.compile(r"\bfn\s+(?P<name>[A-Za-z_][\w]*)")),
+            ("type", re.compile(r"\bstruct\s+(?P<name>[A-Za-z_][\w]*)")),
+            ("type", re.compile(r"\benum\s+(?P<name>[A-Za-z_][\w]*)")),
+            ("type", re.compile(r"\btrait\s+(?P<name>[A-Za-z_][\w]*)")),
+        ]
+
+    _SERVER_RE = re.compile(r"\.route\s*\(\s*\"(?P<route>/[^\"]*)\"")
+    _CLIENT_RE = re.compile(
+        r"\b(?:reqwest::|\w+\.)(?P<m>get|post|put|delete|patch)\s*\(\s*\"(?P<route>/[^\"]*)\"")
 
     def _routes(self, body: str, qual: str, base_line: int) -> List[RawEndpoint]:
         eps: List[RawEndpoint] = []

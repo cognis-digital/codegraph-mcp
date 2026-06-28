@@ -1,5 +1,7 @@
 # codegraph-mcp
 
+[![CI](https://github.com/cognis-digital/codegraph-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/cognis-digital/codegraph-mcp/actions/workflows/ci.yml)
+
 **A no-train, on-prem code knowledge graph that you serve to AI agents over MCP — with a hash-chained audit row for every read.**
 
 AI coding agents are only as good as the code understanding you can hand them. The cloud assistants solve this by ingesting your repositories into their own infrastructure — which is a non-starter for any team whose code can't leave the building. `codegraph-mcp` gives those teams the same structural code intelligence **without the trust trade-off**:
@@ -97,22 +99,53 @@ The server speaks plain JSON-RPC 2.0 over stdio — no proprietary transport, no
 | Python | `ast` (exact) | ✓ | ✓ | ✓ (decorators + `requests`/`httpx`) |
 | JavaScript / TypeScript | regex + brace scan | ✓ | ✓ | ✓ (`fetch`/`axios` + `app`/`router`) |
 | Go | regex + brace scan | ✓ | ✓ | ✓ (`HandleFunc`/gin/echo + `http.Get`) |
+| Rust | regex + brace scan | ✓ | ✓ | ✓ (axum `.route` + `reqwest`) |
 
-The extractor interface is language-agnostic; adding a language (or swapping in a tree-sitter backend for one) doesn't touch the indexer or the graph.
+Four languages, with cross-language edges resolved between any of them. The extractor interface is language-agnostic; adding a language (or swapping in a tree-sitter backend for one) doesn't touch the indexer or the graph.
+
+## Benchmark
+
+The graph earns its keep on the dependency no text search can see: a front-end caller and the back-end handler it depends on share **no symbol name**, only a route. `bench/benchmark.py` generates a multi-language repo and measures how often each strategy finds that cross-language dependency:
+
+```bash
+python bench/benchmark.py --services 120
+```
+
+```
+## cross-language dependency recall
+  (find the front-end caller that breaks if a back-end handler changes)
+  codegraph (graph impact):   120/120
+  grep by symbol name:        0/120
+  grep by route substring:    120/120 (files only, not symbols)
+```
+
+**100% vs 0%.** A symbol-name search can't cross the language boundary at all; a route-substring search finds *files* but not the symbol-level, transitive impact you actually need. The graph gives you both. (This is the "Navigation Paradox" — independent research finds graph-structured navigation beats retrieval/long-context on exactly these hidden-dependency tasks.)
 
 ## How it compares
 
 Cloud code assistants give you great comprehension but require sending your code to their infrastructure, where it may be retained or used to improve a model. Self-hosted forges give you control but make you migrate your hosting to get the indexed graph. `codegraph-mcp` deliberately splits the difference: **the comprehension layer is the product, the graph never trains anything, and it overlays the repos you already have.**
 
+| | Cloud assistant | Self-hosted forge | **codegraph-mcp** |
+|---|---|---|---|
+| Code leaves your machine | yes | no | **no** |
+| Used to train a model | often | sometimes | **never** |
+| Requires migrating your hosting | no | **yes** | **no — overlays existing repos** |
+| Tamper-evident audit of agent reads | no | roadmap | **shipped** |
+| Cross-language dependency graph | partial | Go + TS | **Python · JS/TS · Go · Rust** |
+| Runs air-gapped | no | heavy (DB + services) | **single file, stdlib + SQLite** |
+| Published benchmark | — | none | **yes (reproducible)** |
+
+The overlay model is the wedge: you get the indexed graph and the audit trail **without leaving GitHub/GitLab**, and the audit is tamper-evident *today*, not on a roadmap.
+
 ## Testing
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 30 tests
+pytest -q          # 33 tests
 ```
 
 ## License
 
 Apache-2.0. © Cognis Digital.
 
-> Status: v0.1 — runnable and tested. Roadmap: more languages (Rust, Java, C#), incremental per-commit indexing, project-graph (module/package) view, and an optional HTTP/SSE transport alongside stdio.
+> Status: v0.1 — runnable and tested. Roadmap: more languages (Java, C#, Ruby), incremental per-commit indexing, project-graph (module/package) view, and an optional HTTP/SSE transport alongside stdio.

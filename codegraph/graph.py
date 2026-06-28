@@ -129,25 +129,27 @@ class Store:
     def close(self) -> None:
         self.conn.close()
 
-    def set_meta(self, key: str, value: str) -> None:
+    def set_meta(self, key: str, value: str, commit: bool = True) -> None:
         self.conn.execute(
             "INSERT INTO meta(key, value) VALUES(?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, value),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def get_meta(self, key: str) -> Optional[str]:
         row = self.conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
         return row[0] if row else None
 
-    def reset_file(self, path: str) -> None:
+    def reset_file(self, path: str, commit: bool = True) -> None:
         """Remove a file and everything derived from it (for re-indexing)."""
         row = self.conn.execute("SELECT id FROM files WHERE path=?", (path,)).fetchone()
         if row:
             # ON DELETE CASCADE handles symbols/refs/edges/endpoints.
             self.conn.execute("DELETE FROM files WHERE id=?", (row[0],))
-            self.conn.commit()
+            if commit:
+                self.conn.commit()
 
     # ---- writes ----------------------------------------------------------
     def add_file(self, path: str, lang: str, sha: str, indexed_at: float) -> int:

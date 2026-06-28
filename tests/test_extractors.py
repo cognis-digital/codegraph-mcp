@@ -100,6 +100,31 @@ def test_go_extractor_funcs_and_routes():
     assert any(e.role == "server" and e.route == "/api/health" for e in res.endpoints)
 
 
+def test_rust_extractor_funcs_types_and_routes():
+    src = (
+        "use axum::routing::get;\n"
+        "pub fn router() -> Router {\n"
+        "  Router::new().route(\"/api/users/{id}\", get(get_user))\n"
+        "}\n"
+        "struct User {\n"
+        "  id: String,\n"
+        "}\n"
+        "fn get_user() -> String {\n"
+        "  lookup(\"x\")\n"
+        "}\n"
+        "trait Repo;\n"
+    )
+    res = extractor_for("rust").extract(src)
+    by_name = {s.name: s for s in res.symbols}
+    assert "router" in by_name and by_name["router"].kind == "function"
+    assert "User" in by_name and by_name["User"].kind == "type"
+    assert "get_user" in by_name
+    # 'trait Repo;' is a declaration with no body -> still captured, no distant brace grab
+    assert "Repo" in by_name and by_name["Repo"].start_line == by_name["Repo"].end_line
+    assert "lookup" in by_name["get_user"].calls
+    assert any(e.role == "server" and e.route == "/api/users/{id}" for e in res.endpoints)
+
+
 def test_brace_scan_ignores_braces_in_strings():
     src = (
         "function f() {\n"

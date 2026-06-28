@@ -7,13 +7,14 @@ from typing import Optional
 
 from .base import Extractor, RawEndpoint, RawRef, RawSymbol
 from .python_ext import PythonExtractor
-from .regex_ext import GoExtractor, JsExtractor
+from .regex_ext import GoExtractor, JsExtractor, RustExtractor
 
 _BY_LANG: dict[str, Extractor] = {
     "python": PythonExtractor(),
     "javascript": JsExtractor("javascript"),
     "typescript": JsExtractor("typescript"),
     "go": GoExtractor(),
+    "rust": RustExtractor(),
 }
 
 _BY_SUFFIX = {
@@ -24,6 +25,7 @@ _BY_SUFFIX = {
     ".ts": "typescript",
     ".tsx": "typescript",
     ".go": "go",
+    ".rs": "rust",
 }
 
 
@@ -43,6 +45,7 @@ __all__ = [
     "PythonExtractor",
     "JsExtractor",
     "GoExtractor",
+    "RustExtractor",
     "language_for",
     "extractor_for",
 ]

@@ -12,12 +12,13 @@ def build():
     return store, stats
 
 
-def test_indexes_three_languages():
+def test_indexes_four_languages():
     store, stats = build()
     s = store.stats()
     assert s["languages"].get("python", 0) >= 1
     assert s["languages"].get("typescript", 0) >= 1
     assert s["languages"].get("go", 0) >= 1
+    assert s["languages"].get("rust", 0) >= 1
     assert stats.symbols > 0
 
 
@@ -32,7 +33,7 @@ def test_symbol_search_and_get():
 def test_call_edges_resolved():
     store, _ = build()
     # get_user (python) calls lookup
-    [get_user] = [s for s in store.symbols_by_name("get_user")]
+    get_user = next(s for s in store.symbols_by_name("get_user") if s.lang == "python")
     callees = {c.name for c in store.callees_of(get_user.id)}
     assert "lookup" in callees
 
@@ -40,16 +41,24 @@ def test_call_edges_resolved():
 def test_cross_language_edges_present():
     store, _ = build()
     edges = store.cross_language_edges()
-    # the TS client calling /api/users/${id} should link to a non-TS handler
+    # the TS client calling /api/users/${id} should fan out to non-TS handlers
     langs_reached = {e["to"]["lang"] for e in edges if e["from"]["lang"] == "typescript"}
-    assert "python" in langs_reached or "go" in langs_reached
+    assert {"python", "go", "rust"} & langs_reached
     assert any(e["from"]["symbol"] == "loadUser" for e in edges)
+
+
+def test_cross_language_reaches_all_backends():
+    store, _ = build()
+    edges = store.cross_language_edges()
+    reached = {e["to"]["lang"] for e in edges if e["from"]["symbol"] == "loadUser"}
+    # loadUser hits the same route served in Go, Python, and Rust
+    assert {"python", "go", "rust"} <= reached
 
 
 def test_impact_includes_cross_language_caller():
     store, _ = build()
     # changing the python get_user handler should implicate the TS client
-    [get_user] = [s for s in store.symbols_by_name("get_user")]
+    get_user = next(s for s in store.symbols_by_name("get_user") if s.lang == "python")
     impact = store.impact(get_user.id)
     impacted_names = {row["name"] for row in impact["impacted"]}
     assert "loadUser" in impacted_names

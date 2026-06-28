@@ -26,7 +26,7 @@ def main() -> None:
         print(f"  {f['symbol']} ({f['lang']})  ->  {t['symbol']} ({t['lang']})   [{e['detail']}]")
 
     print("\n== blast radius of the Python get_user handler ==")
-    (get_user,) = store.symbols_by_name("get_user")
+    get_user = next(s for s in store.symbols_by_name("get_user") if s.lang == "python")
     impact = store.impact(get_user.id)
     for row in impact["impacted"]:
         print(f"  depth {row['depth']}: {row['qualname']} ({row['lang']}) @ {row['location']}")

@@ -93,11 +93,11 @@ def index_path(store: Store, root: str | Path, actor: str = "indexer") -> IndexS
         existing = store.get_meta(f"file_sha:{rel}")
         if existing == sha:
             continue  # unchanged since last index
-        store.reset_file(rel)
+        store.reset_file(rel, commit=False)
 
         result = ext.extract(text)
         file_id = store.add_file(rel, lang, sha, time.time())
-        store.set_meta(f"file_sha:{rel}", sha)
+        store.set_meta(f"file_sha:{rel}", sha, commit=False)
         stats.files += 1
 
         local_syms: dict[str, int] = {}
