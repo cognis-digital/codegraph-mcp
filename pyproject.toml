@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codegraph-mcp"
+version = "0.1.0"
+description = "No-train, on-prem code knowledge graph served to AI agents over MCP, with a hash-chained audit log."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Cognis Digital" }]
+keywords = ["mcp", "knowledge-graph", "code-intelligence", "ai-agents", "audit", "compliance", "on-prem"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Apache Software License",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: Security",
+]
+dependencies = []  # standard library only
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+codegraph = "codegraph.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/cognis-digital/codegraph-mcp"
+
+[tool.setuptools]
+packages = ["codegraph", "codegraph.extractors"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

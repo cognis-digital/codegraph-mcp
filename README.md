@@ -1,0 +1,118 @@
+# codegraph-mcp
+
+**A no-train, on-prem code knowledge graph that you serve to AI agents over MCP — with a hash-chained audit row for every read.**
+
+AI coding agents are only as good as the code understanding you can hand them. The cloud assistants solve this by ingesting your repositories into their own infrastructure — which is a non-starter for any team whose code can't leave the building. `codegraph-mcp` gives those teams the same structural code intelligence **without the trust trade-off**:
+
+- **No training, ever.** The graph exists only to answer queries. Your code is never used to rank, sell, recommend, or train a model, and nothing leaves the machine.
+- **Overlay, not migration.** Point it at any checkout or git URL. Keep hosting your code exactly where it already lives — GitHub, GitLab, an internal mirror, an air-gapped drive.
+- **Provable reads.** Every query an agent makes is appended to a tamper-evident, hash-chained audit log you can verify offline. "Which agent read what, and when" becomes a fact you can show a regulator, not a guess.
+- **Zero heavy dependencies.** Pure Python standard library + SQLite. One file is the whole graph. Trivial to vet, back up, and run in a restricted network.
+
+Architecture comprehension — *how the pieces connect* — is what actually helps an agent, and independent research keeps finding it beats stuffing a giant context window with raw files. `codegraph-mcp` builds that comprehension as a graph and exposes it as MCP tools.
+
+---
+
+## What it does
+
+On every push or re-index, `codegraph-mcp` parses your source and builds a queryable graph of:
+
+- **Symbols** — functions, methods, classes, and types, with signatures and exact locations.
+- **Call edges** — who calls whom, within and across files.
+- **Cross-language edges** — the edge nobody else resolves: a TypeScript `fetch('/api/users/:id')` linked to the Go *and* Python handlers that serve that route. These files share no symbol name, so only a structural join finds the dependency.
+- **References** — every call site / use of a name.
+
+Then it answers the questions an agent (or a human) actually asks: *find this symbol, who calls it, what's the blast radius if I change it, what crosses a language boundary here.*
+
+## Quick start
+
+```bash
+git clone https://github.com/cognis-digital/codegraph-mcp
+cd codegraph-mcp
+pip install -e .          # or just run via `python -m codegraph`
+
+# 1. Index any repo (a local path, or a git URL it clones read-only)
+codegraph index ./examples/sample_repo --db graph.db
+codegraph index https://github.com/your-org/your-service.git --db graph.db
+
+# 2. Query the graph
+codegraph query search loadUser --db graph.db
+codegraph query impact 7 --db graph.db          # transitive callers ("blast radius")
+codegraph query xlang --db graph.db             # cross-language HTTP edges
+
+# 3. Serve it to an agent over MCP (stdio)
+codegraph token issue ci-agent --scopes read --db graph.db   # prints a bearer token
+codegraph serve --db graph.db --token cg_XXXX
+
+# 4. Prove what happened
+codegraph audit --db graph.db -n 20
+codegraph audit --db graph.db --verify          # replays the hash chain
+```
+
+### See it work in 5 seconds
+
+```bash
+python demo.py
+```
+
+```
+== cross-language edges (client -> handler) ==
+  loadUser (typescript)  ->  get_user (python)   [ANY /api/users/${userId} -> GET /api/users/<id>]
+  loadUser (typescript)  ->  routes (go)         [ANY /api/users/${userId} -> ANY /api/users/{id}]
+  checkHealth (typescript) -> health (python)    [ANY /api/health -> ANY /api/health]
+  ...
+== blast radius of the Python get_user handler ==
+  depth 1: loadUser (typescript) @ web/client.ts:10
+== audit log is intact and tamper-evident ==
+  verify() -> intact=True first_broken=None
+```
+
+## MCP tools
+
+When you run `codegraph serve`, the following tools are advertised to the agent host over MCP (`initialize` → `tools/list` → `tools/call`). Every call is scope-checked and audited.
+
+| Tool | Purpose |
+|------|---------|
+| `search_symbols` | Find symbols by name substring (optionally filter by kind). |
+| `get_symbol` | Full record for one symbol id (signature, location, container). |
+| `find_references` | Every call site / use of a name. |
+| `find_callers` | Direct callers of a symbol — **includes cross-language edges**. |
+| `find_callees` | What a symbol calls. |
+| `impact_analysis` | Transitive callers — the blast radius of a change. |
+| `cross_language_edges` | All resolved cross-language HTTP edges. |
+| `graph_stats` | File / symbol / edge / language counts. |
+
+The server speaks plain JSON-RPC 2.0 over stdio — no proprietary transport, no SDK to audit. Point any MCP-capable agent host at `codegraph serve`.
+
+## Security model
+
+- **Scoped, revocable tokens.** Agents authenticate with a bearer token mapped to scopes (`read`, `audit`, `admin`). Only a salted BLAKE2b hash of each token is stored, so a database leak doesn't leak usable credentials. Revocation is immediate.
+- **Tamper-evident audit log.** Each record's hash commits to the previous record's hash (BLAKE2b over a canonical JSON encoding). Altering, inserting, or deleting any historical record breaks the chain, and `audit --verify` reports the first broken sequence number. The scheme is simple enough to re-implement in any language for independent verification.
+- **Local by construction.** SQLite file, standard library only, no outbound network calls except an explicit, read-only `git clone` when you index a remote.
+
+## Language support
+
+| Language | Backend | Symbols | Calls | HTTP routes |
+|----------|---------|:-------:|:-----:|:-----------:|
+| Python | `ast` (exact) | ✓ | ✓ | ✓ (decorators + `requests`/`httpx`) |
+| JavaScript / TypeScript | regex + brace scan | ✓ | ✓ | ✓ (`fetch`/`axios` + `app`/`router`) |
+| Go | regex + brace scan | ✓ | ✓ | ✓ (`HandleFunc`/gin/echo + `http.Get`) |
+
+The extractor interface is language-agnostic; adding a language (or swapping in a tree-sitter backend for one) doesn't touch the indexer or the graph.
+
+## How it compares
+
+Cloud code assistants give you great comprehension but require sending your code to their infrastructure, where it may be retained or used to improve a model. Self-hosted forges give you control but make you migrate your hosting to get the indexed graph. `codegraph-mcp` deliberately splits the difference: **the comprehension layer is the product, the graph never trains anything, and it overlays the repos you already have.**
+
+## Testing
+
+```bash
+pip install -e ".[dev]"
+pytest -q          # 30 tests
+```
+
+## License
+
+Apache-2.0. © Cognis Digital.
+
+> Status: v0.1 — runnable and tested. Roadmap: more languages (Rust, Java, C#), incremental per-commit indexing, project-graph (module/package) view, and an optional HTTP/SSE transport alongside stdio.
