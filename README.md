@@ -42,9 +42,13 @@ codegraph query search loadUser --db graph.db
 codegraph query impact 7 --db graph.db          # transitive callers ("blast radius")
 codegraph query xlang --db graph.db             # cross-language HTTP edges
 
-# 3. Serve it to an agent over MCP (stdio)
+# 3. Serve it to an agent over MCP — stdio or HTTP
 codegraph token issue ci-agent --scopes read --db graph.db   # prints a bearer token
-codegraph serve --db graph.db --token cg_XXXX
+codegraph serve --db graph.db --token cg_XXXX                 # stdio
+codegraph serve --db graph.db --http --port 8765 --require-token   # HTTP (POST /mcp)
+
+# Diff the graph between two git refs — what changed in the *shape* of the code
+codegraph diff main feature/x --repo .
 
 # 4. Prove what happened
 codegraph audit --db graph.db -n 20
@@ -86,7 +90,23 @@ When you run `codegraph serve`, the following tools are advertised to the agent 
 | `find_hotspots` | Most depended-on symbols (highest caller count) — where changes ripple furthest. |
 | `graph_stats` | File / symbol / edge / language counts. |
 
-The server speaks plain JSON-RPC 2.0 over stdio — no proprietary transport, no SDK to audit. Point any MCP-capable agent host at `codegraph serve`.
+The server speaks plain JSON-RPC 2.0 — no proprietary transport, no SDK to audit — over **either stdio or HTTP**. Point a subprocess-style host at `codegraph serve`, or an HTTP host at `codegraph serve --http` (bearer token via `Authorization: Bearer …`, `GET /health` for readiness). Both transports share the exact same dispatch, scope checks, and audit logging.
+
+## Graph diff
+
+`codegraph diff <refA> <refB>` compares the knowledge graph between two git refs and reports what changed in the **shape** of the code — not the text:
+
+```bash
+codegraph diff main feature/x --repo .
+```
+
+```json
+{ "summary": { "symbols_added": 3, "symbols_removed": 1, "signatures_changed": 2,
+               "endpoints_added": 1, "cross_language_edges_added": 1, ... },
+  "cross_language_edges": { "added": [ { "from": "load (typescript)", "to": "get_item (python)" } ] } }
+```
+
+That last line is the one a text diff can never give you: a front-end change and a back-end change in the same PR were **newly wired together across a language boundary**. Reviewers see the contract that just formed.
 
 ## Security model
 
@@ -145,11 +165,11 @@ The overlay model is the wedge: you get the indexed graph and the audit trail **
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 38 tests
+pytest -q          # 46 tests
 ```
 
 ## License
 
 Apache-2.0. © Cognis Digital.
 
-> Status: v0.1 — runnable and tested. Roadmap: more languages (Ruby, Kotlin, PHP), incremental per-commit indexing, project-graph (module/package) view, and an optional HTTP/SSE transport alongside stdio.
+> Status: v0.1 — runnable and tested. HTTP transport and KG diff are shipped. Roadmap: more languages (Ruby, Kotlin, PHP), incremental per-commit indexing, and a project-graph (module/package) view.

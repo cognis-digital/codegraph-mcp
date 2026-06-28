@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .diff import diff_git, diff_paths
 from .graph import Store
 from .indexer import index_git, index_path
 from .mcp_server import MCPServer
@@ -55,6 +56,14 @@ def cmd_stats(args) -> int:
         store.close()
 
 
+def cmd_diff(args) -> int:
+    if args.paths:
+        _print(diff_paths(args.a, args.b))
+    else:
+        _print(diff_git(args.repo, args.a, args.b))
+    return 0
+
+
 def cmd_query(args) -> int:
     store = _store(args)
     try:
@@ -84,10 +93,23 @@ def cmd_query(args) -> int:
 
 
 def cmd_serve(args) -> int:
-    store = _store(args)
+    # HTTP mode serves from a worker thread, so the connection must be usable
+    # across threads (requests are still handled one at a time).
+    store = Store(getattr(args, "db", DEFAULT_DB), check_same_thread=not args.http)
     try:
+        if args.http:
+            from .http_server import serve_http
+            httpd = serve_http(store, args.host, args.port, args.require_token)
+            print(f"codegraph-mcp serving over HTTP at http://{args.host}:{args.port}/mcp "
+                  f"(db={args.db}, require_token={args.require_token})", file=sys.stderr)
+            try:
+                httpd.serve_forever()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                httpd.server_close()
+            return 0
         server = MCPServer(store, token=args.token)
-        print(f"{store.get_meta('source_url') or ''}".strip() or "", file=sys.stderr, end="")
         print(f"codegraph-mcp serving over stdio (db={args.db})", file=sys.stderr)
         server.serve_forever()
         return 0
@@ -159,6 +181,13 @@ def build_parser() -> argparse.ArgumentParser:
     ps = sub.add_parser("stats", parents=[db_parent], help="show graph statistics")
     ps.set_defaults(func=cmd_stats)
 
+    pdf = sub.add_parser("diff", help="diff the knowledge graph between two git refs (or two paths)")
+    pdf.add_argument("a", help="ref A (or path A with --paths)")
+    pdf.add_argument("b", help="ref B (or path B with --paths)")
+    pdf.add_argument("--repo", default=".", help="git repo to diff refs in (default: .)")
+    pdf.add_argument("--paths", action="store_true", help="treat A and B as directories, not git refs")
+    pdf.set_defaults(func=cmd_diff)
+
     pq = sub.add_parser("query", help="query the graph")
     qsub = pq.add_subparsers(dest="qsub", required=True)
     q1 = qsub.add_parser("search", parents=[db_parent]); q1.add_argument("name"); q1.add_argument("--kind"); q1.add_argument("--limit", type=int, default=50)
@@ -171,8 +200,13 @@ def build_parser() -> argparse.ArgumentParser:
     q7 = qsub.add_parser("hotspots", parents=[db_parent]); q7.add_argument("--limit", type=int, default=20)
     pq.set_defaults(func=cmd_query)
 
-    pv = sub.add_parser("serve", parents=[db_parent], help="serve the graph to agents over MCP (stdio)")
-    pv.add_argument("--token", default=None, help="require this agent token")
+    pv = sub.add_parser("serve", parents=[db_parent], help="serve the graph to agents over MCP (stdio or HTTP)")
+    pv.add_argument("--token", default=None, help="require this agent token (stdio mode)")
+    pv.add_argument("--http", action="store_true", help="serve over HTTP instead of stdio")
+    pv.add_argument("--host", default="127.0.0.1", help="HTTP bind host")
+    pv.add_argument("--port", type=int, default=8765, help="HTTP bind port")
+    pv.add_argument("--require-token", dest="require_token", action="store_true",
+                    help="reject HTTP requests without a bearer token")
     pv.set_defaults(func=cmd_serve)
 
     pt = sub.add_parser("token", help="manage scoped agent tokens")

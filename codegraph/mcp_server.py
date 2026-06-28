@@ -138,13 +138,16 @@ class MCPServer:
         self.outstream.write(json.dumps(obj) + "\n")
         self.outstream.flush()
 
-    def _result(self, req_id, result) -> None:
-        self._send({"jsonrpc": "2.0", "id": req_id, "result": result})
+    @staticmethod
+    def _ok(req_id, result) -> dict:
+        return {"jsonrpc": "2.0", "id": req_id, "result": result}
 
-    def _error(self, req_id, code: int, message: str) -> None:
-        self._send({"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}})
+    @staticmethod
+    def _err(req_id, code: int, message: str) -> dict:
+        return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
 
     def serve_forever(self) -> None:
+        """stdio transport: one JSON-RPC message per line."""
         for line in self.instream:
             line = line.strip()
             if not line:
@@ -152,30 +155,43 @@ class MCPServer:
             try:
                 req = json.loads(line)
             except json.JSONDecodeError:
-                self._error(None, -32700, "parse error")
+                self._send(self._err(None, -32700, "parse error"))
                 continue
-            self.handle(req)
+            resp = self.dispatch(req)
+            if resp is not None:
+                self._send(resp)
 
     # ---- request dispatch -----------------------------------------------
     def handle(self, req: dict) -> None:
+        """Dispatch and send (used by the stdio loop and tests)."""
+        resp = self.dispatch(req)
+        if resp is not None:
+            self._send(resp)
+
+    def dispatch(self, req: dict) -> Optional[dict]:
+        """Pure request -> response. Returns None for notifications.
+
+        Transport-agnostic: the stdio loop and the HTTP transport both call this.
+        """
         method = req.get("method")
         req_id = req.get("id")
         params = req.get("params") or {}
 
         if method == "initialize":
-            self._result(req_id, {
+            return self._ok(req_id, {
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": {"name": SERVER_NAME, "version": "0.1.0"},
             })
-        elif method == "notifications/initialized":
-            pass  # notification, no response
-        elif method == "tools/list":
-            self._result(req_id, {"tools": self._tool_list()})
-        elif method == "tools/call":
-            self._call_tool(req_id, params)
-        elif req_id is not None:
-            self._error(req_id, -32601, f"method not found: {method}")
+        if method == "notifications/initialized":
+            return None  # notification, no response
+        if method == "tools/list":
+            return self._ok(req_id, {"tools": self._tool_list()})
+        if method == "tools/call":
+            return self._call_tool(req_id, params)
+        if req_id is not None:
+            return self._err(req_id, -32601, f"method not found: {method}")
+        return None
 
     def _tool_list(self) -> list[dict]:
         out = []
@@ -200,36 +216,32 @@ class MCPServer:
             return f"token '{self.identity.label}' lacks scope '{needed}'"
         return None
 
-    def _call_tool(self, req_id, params: dict) -> None:
+    def _call_tool(self, req_id, params: dict) -> dict:
         name = params.get("name")
         args = params.get("arguments") or {}
         handler_attr = dict((n, a) for n, a, *_ in TOOL_SPECS).get(name)
         if not handler_attr:
-            self._error(req_id, -32602, f"unknown tool: {name}")
-            return
+            return self._err(req_id, -32602, f"unknown tool: {name}")
 
         denied = self._authorize(name)
         if denied:
             self.store.audit.append(self.actor, "tool_call_denied", name, {"reason": denied})
-            self._error(req_id, -32001, denied)
-            return
+            return self._err(req_id, -32001, denied)
 
         handler: Callable[..., Any] = getattr(self.tools, handler_attr)
         try:
             data = handler(**args)
         except TypeError as e:
-            self._error(req_id, -32602, f"bad arguments: {e}")
-            return
+            return self._err(req_id, -32602, f"bad arguments: {e}")
         except Exception as e:  # noqa: BLE001 - report tool errors to the agent
-            self._error(req_id, -32000, f"tool error: {e}")
-            return
+            return self._err(req_id, -32000, f"tool error: {e}")
 
         # provable read: log the call (and a compact result fingerprint)
         self.store.audit.append(
             self.actor, "tool_call", name,
             {"arguments": args, "result_keys": sorted(data.keys()) if isinstance(data, dict) else []},
         )
-        self._result(req_id, {
+        return self._ok(req_id, {
             "content": [{"type": "text", "text": json.dumps(data, indent=2)}],
             "isError": False,
         })

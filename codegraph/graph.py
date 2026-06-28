@@ -117,9 +117,11 @@ class Symbol:
 class Store:
     """Owns the SQLite connection and exposes graph reads and writes."""
 
-    def __init__(self, db_path: str | Path = ":memory:"):
+    def __init__(self, db_path: str | Path = ":memory:", check_same_thread: bool = True):
         self.db_path = str(db_path)
-        self.conn = sqlite3.connect(self.db_path)
+        # check_same_thread=False lets the single-threaded HTTP transport serve
+        # from a worker thread; request handling is serialized so it stays safe.
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=check_same_thread)
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA)
         self.conn.commit()
