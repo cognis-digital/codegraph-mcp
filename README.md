@@ -6,14 +6,18 @@
 
 **A no-train, on-prem code knowledge graph that you serve to AI agents over MCP — with a hash-chained audit row for every read.**
 
-AI coding agents are only as good as the code understanding you can hand them. The cloud assistants solve this by ingesting your repositories into their own infrastructure — which is a non-starter for any team whose code can't leave the building. `codegraph-mcp` gives those teams the same structural code intelligence **without the trust trade-off**:
+Ask yourself:
 
-- **No training, ever.** The graph exists only to answer queries. Your code is never used to rank, sell, recommend, or train a model, and nothing leaves the machine.
+- Do your AI coding agents need to understand a codebase that **can't be uploaded to a vendor's cloud**?
+- Have you watched an agent miss that a one-line change breaks a caller **in another language** — because it only ever saw one file?
+- When an agent reads your source, could you produce **a record of exactly what it read** — and prove it wasn't edited after the fact?
+
+If that's your world, you're in the right place. `codegraph-mcp` gives agents real, *structural* understanding of your code, on hardware you control:
+
+- **No training, ever.** The graph exists only to answer queries. Your code is never used to rank, sell, or train a model, and nothing leaves the machine.
 - **Overlay, not migration.** Point it at any checkout or git URL. Keep hosting your code exactly where it already lives — GitHub, GitLab, an internal mirror, an air-gapped drive.
-- **Provable reads.** Every query an agent makes is appended to a tamper-evident, hash-chained audit log you can verify offline. "Which agent read what, and when" becomes a fact you can show a regulator, not a guess.
-- **Zero heavy dependencies.** Pure Python standard library + SQLite. One file is the whole graph. Trivial to vet, back up, and run in a restricted network.
-
-Architecture comprehension — *how the pieces connect* — is what actually helps an agent, and independent research keeps finding it beats stuffing a giant context window with raw files. `codegraph-mcp` builds that comprehension as a graph and exposes it as MCP tools.
+- **Provable reads.** Every query an agent makes lands in a tamper-evident, hash-chained audit log you can verify offline. "Which agent read what, and when" is a fact you can show a regulator, not a guess.
+- **Sees what one-file context can't.** Six languages, with cross-language edges — the dependency a giant context window misses. (Independent research keeps finding graph-structured understanding beats stuffing raw files into a prompt.)
 
 ---
 
@@ -57,23 +61,7 @@ codegraph audit --db graph.db -n 20
 codegraph audit --db graph.db --verify          # replays the hash chain
 ```
 
-### See it work in 5 seconds
-
-```bash
-python demo.py
-```
-
-```
-== cross-language edges (client -> handler) ==
-  loadUser (typescript)  ->  get_user (python)   [ANY /api/users/${userId} -> GET /api/users/<id>]
-  loadUser (typescript)  ->  routes (go)         [ANY /api/users/${userId} -> ANY /api/users/{id}]
-  checkHealth (typescript) -> health (python)    [ANY /api/health -> ANY /api/health]
-  ...
-== blast radius of the Python get_user handler ==
-  depth 1: loadUser (typescript) @ web/client.ts:10
-== audit log is intact and tamper-evident ==
-  verify() -> intact=True first_broken=None
-```
+Run `python demo.py` to watch it index the sample repo, resolve cross-language edges, trace a blast radius, and verify the audit chain end to end.
 
 ## MCP tools
 
