@@ -33,7 +33,8 @@ def test_initialize_and_list():
 
     listed = drive(server, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     tool_names = {t["name"] for t in listed["result"]["tools"]}
-    assert {"search_symbols", "find_callers", "impact_analysis", "cross_language_edges"} <= tool_names
+    assert {"search_symbols", "find_callers", "impact_analysis", "cross_language_edges",
+            "find_orphans", "find_hotspots"} <= tool_names
 
 
 def test_tools_call_search_and_audit_logged():

@@ -327,6 +327,44 @@ class Store:
             for r in rows
         ]
 
+    def orphans(self, limit: int = 100) -> list[dict]:
+        """Functions/methods with no callers and not HTTP entrypoints.
+
+        These are dead-code candidates: nothing in the graph reaches them and
+        they aren't reachable from outside as a route handler. (Cross-language
+        edges count as callers, so a handler invoked only from another language
+        is correctly *not* flagged.)
+        """
+        rows = self.conn.execute(
+            f"SELECT {self._SYMBOL_COLS} FROM symbols s JOIN files f ON f.id = s.file_id "
+            "WHERE s.kind IN ('function', 'method') "
+            "AND s.id NOT IN (SELECT dst FROM edges) "
+            "AND s.id NOT IN (SELECT symbol_id FROM endpoints WHERE role='server') "
+            "ORDER BY f.path, s.start_line LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [self._symbol_from_row(r).as_dict() for r in rows]
+
+    def hotspots(self, limit: int = 20) -> list[dict]:
+        """Most depended-on symbols, ranked by number of incoming edges.
+
+        High in-degree symbols are where a change ripples furthest — the places
+        to review hardest and test most.
+        """
+        rows = self.conn.execute(
+            f"SELECT {self._SYMBOL_COLS}, COUNT(e.src) AS callers "
+            "FROM symbols s JOIN files f ON f.id = s.file_id "
+            "JOIN edges e ON e.dst = s.id "
+            "GROUP BY s.id ORDER BY callers DESC, s.name LIMIT ?",
+            (limit,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = self._symbol_from_row(r).as_dict()
+            d["callers"] = r[9]
+            out.append(d)
+        return out
+
     def stats(self) -> dict:
         def count(table: str) -> int:
             return int(self.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])

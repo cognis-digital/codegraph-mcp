@@ -62,6 +62,27 @@ def test_impact_includes_cross_language_caller():
     assert "loadUser" in impacted_names
 
 
+def test_hotspots_ranks_by_callers():
+    store, _ = build()
+    hot = store.hotspots(limit=5)
+    assert hot
+    # every entry carries a caller count, sorted descending
+    counts = [h["callers"] for h in hot]
+    assert counts == sorted(counts, reverse=True)
+    assert hot[0]["callers"] >= 1
+
+
+def test_orphans_excludes_called_and_entrypoints():
+    store, _ = build()
+    orphans = {(o["name"], o["lang"]) for o in store.orphans()}
+    # 'lookup' is called by handlers -> not an orphan
+    assert ("lookup", "python") not in orphans
+    # the Python 'get_user' is an HTTP entrypoint -> excluded even if only HTTP-reached
+    assert ("get_user", "python") not in orphans
+    # 'renderUser' (ts) has no callers and isn't a route -> a dead-code candidate
+    assert ("renderUser", "typescript") in orphans
+
+
 def test_reindex_is_idempotent():
     store = Store(":memory:")
     a = index_path(store, SAMPLE)

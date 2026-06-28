@@ -71,6 +71,10 @@ def cmd_query(args) -> int:
             _print(store.impact(args.symbol_id, args.max_depth))
         elif sub == "xlang":
             _print({"edges": store.cross_language_edges()})
+        elif sub == "orphans":
+            _print({"orphans": store.orphans(args.limit)})
+        elif sub == "hotspots":
+            _print({"hotspots": store.hotspots(args.limit)})
         else:  # pragma: no cover
             print(f"unknown query: {sub}", file=sys.stderr)
             return 2
@@ -163,6 +167,8 @@ def build_parser() -> argparse.ArgumentParser:
     q4 = qsub.add_parser("callees", parents=[db_parent]); q4.add_argument("symbol_id", type=int)
     q5 = qsub.add_parser("impact", parents=[db_parent]); q5.add_argument("symbol_id", type=int); q5.add_argument("--max-depth", dest="max_depth", type=int, default=6)
     qsub.add_parser("xlang", parents=[db_parent])
+    q6 = qsub.add_parser("orphans", parents=[db_parent]); q6.add_argument("--limit", type=int, default=100)
+    q7 = qsub.add_parser("hotspots", parents=[db_parent]); q7.add_argument("--limit", type=int, default=20)
     pq.set_defaults(func=cmd_query)
 
     pv = sub.add_parser("serve", parents=[db_parent], help="serve the graph to agents over MCP (stdio)")

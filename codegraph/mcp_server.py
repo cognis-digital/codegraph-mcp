@@ -59,6 +59,12 @@ class CodeGraphTools:
     def cross_language_edges(self) -> dict:
         return {"edges": self.store.cross_language_edges()}
 
+    def find_orphans(self, limit: int = 100) -> dict:
+        return {"orphans": self.store.orphans(int(limit))}
+
+    def find_hotspots(self, limit: int = 20) -> dict:
+        return {"hotspots": self.store.hotspots(int(limit))}
+
     def graph_stats(self) -> dict:
         return self.store.stats()
 
@@ -90,6 +96,12 @@ TOOL_SPECS = [
     ("cross_language_edges", "cross_language_edges",
      "List resolved cross-language HTTP edges (e.g. a TS fetch -> a Go/Python handler).",
      {}, []),
+    ("find_orphans", "find_orphans",
+     "Dead-code candidates: functions/methods with no callers and not HTTP entrypoints.",
+     {"limit": {"type": "integer", "default": 100}}, []),
+    ("find_hotspots", "find_hotspots",
+     "Most depended-on symbols (highest caller count) — where changes ripple furthest.",
+     {"limit": {"type": "integer", "default": 20}}, []),
     ("graph_stats", "graph_stats",
      "Summary counts for the indexed graph (files, symbols, edges, languages).",
      {}, []),

@@ -82,6 +82,8 @@ When you run `codegraph serve`, the following tools are advertised to the agent 
 | `find_callees` | What a symbol calls. |
 | `impact_analysis` | Transitive callers — the blast radius of a change. |
 | `cross_language_edges` | All resolved cross-language HTTP edges. |
+| `find_orphans` | Dead-code candidates: functions/methods with no callers and not HTTP entrypoints. |
+| `find_hotspots` | Most depended-on symbols (highest caller count) — where changes ripple furthest. |
 | `graph_stats` | File / symbol / edge / language counts. |
 
 The server speaks plain JSON-RPC 2.0 over stdio — no proprietary transport, no SDK to audit. Point any MCP-capable agent host at `codegraph serve`.
@@ -143,7 +145,7 @@ The overlay model is the wedge: you get the indexed graph and the audit trail **
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 36 tests
+pytest -q          # 38 tests
 ```
 
 ## License
