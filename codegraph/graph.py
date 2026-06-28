@@ -367,6 +367,55 @@ class Store:
             out.append(d)
         return out
 
+    def project_graph(self) -> dict:
+        """A module-level view: zoom out from symbols to packages/directories.
+
+        Each module is a directory; an edge from module A to module B means a
+        symbol in A calls (or, across a language boundary, reaches) a symbol in
+        B. Weights count the underlying symbol edges. This is the architecture
+        map a reviewer or agent wants before diving into individual symbols.
+        """
+        from collections import defaultdict
+
+        def module_of(path: str) -> str:
+            return path.rsplit("/", 1)[0] if "/" in path else "."
+
+        files = self.conn.execute("SELECT path, lang FROM files").fetchall()
+        mod_files: dict[str, set] = defaultdict(set)
+        mod_langs: dict[str, set] = defaultdict(set)
+        for path, lang in files:
+            m = module_of(path)
+            mod_files[m].add(path)
+            mod_langs[m].add(lang)
+
+        mod_symbols: dict[str, int] = defaultdict(int)
+        for (path,) in self.conn.execute(
+            "SELECT f.path FROM symbols s JOIN files f ON f.id = s.file_id"
+        ):
+            mod_symbols[module_of(path)] += 1
+
+        edge_weights: dict[tuple, int] = defaultdict(int)
+        for sp, dp, kind in self.conn.execute(
+            "SELECT sf.path, df.path, e.kind FROM edges e "
+            "JOIN symbols ss ON ss.id = e.src JOIN files sf ON sf.id = ss.file_id "
+            "JOIN symbols ds ON ds.id = e.dst JOIN files df ON df.id = ds.file_id"
+        ):
+            a, b = module_of(sp), module_of(dp)
+            if a != b:
+                k = "cross_lang_http" if kind == "cross_lang_http" else "calls"
+                edge_weights[(a, b, k)] += 1
+
+        modules = [
+            {"module": m, "files": len(mod_files[m]), "symbols": mod_symbols.get(m, 0),
+             "languages": sorted(mod_langs[m])}
+            for m in sorted(mod_files)
+        ]
+        edges = [
+            {"from": a, "to": b, "kind": k, "weight": w}
+            for (a, b, k), w in sorted(edge_weights.items())
+        ]
+        return {"modules": modules, "edges": edges}
+
     def stats(self) -> dict:
         def count(table: str) -> int:
             return int(self.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])

@@ -65,6 +65,9 @@ class CodeGraphTools:
     def find_hotspots(self, limit: int = 20) -> dict:
         return {"hotspots": self.store.hotspots(int(limit))}
 
+    def project_graph(self) -> dict:
+        return self.store.project_graph()
+
     def graph_stats(self) -> dict:
         return self.store.stats()
 
@@ -102,6 +105,9 @@ TOOL_SPECS = [
     ("find_hotspots", "find_hotspots",
      "Most depended-on symbols (highest caller count) — where changes ripple furthest.",
      {"limit": {"type": "integer", "default": 20}}, []),
+    ("project_graph", "project_graph",
+     "Module/package-level dependency graph: modules and the (weighted) edges between them.",
+     {}, []),
     ("graph_stats", "graph_stats",
      "Summary counts for the indexed graph (files, symbols, edges, languages).",
      {}, []),

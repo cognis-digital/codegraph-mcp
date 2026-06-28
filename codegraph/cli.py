@@ -84,6 +84,8 @@ def cmd_query(args) -> int:
             _print({"orphans": store.orphans(args.limit)})
         elif sub == "hotspots":
             _print({"hotspots": store.hotspots(args.limit)})
+        elif sub == "project-graph":
+            _print(store.project_graph())
         else:  # pragma: no cover
             print(f"unknown query: {sub}", file=sys.stderr)
             return 2
@@ -198,6 +200,7 @@ def build_parser() -> argparse.ArgumentParser:
     qsub.add_parser("xlang", parents=[db_parent])
     q6 = qsub.add_parser("orphans", parents=[db_parent]); q6.add_argument("--limit", type=int, default=100)
     q7 = qsub.add_parser("hotspots", parents=[db_parent]); q7.add_argument("--limit", type=int, default=20)
+    qsub.add_parser("project-graph", parents=[db_parent])
     pq.set_defaults(func=cmd_query)
 
     pv = sub.add_parser("serve", parents=[db_parent], help="serve the graph to agents over MCP (stdio or HTTP)")

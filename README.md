@@ -88,6 +88,7 @@ When you run `codegraph serve`, the following tools are advertised to the agent 
 | `cross_language_edges` | All resolved cross-language HTTP edges. |
 | `find_orphans` | Dead-code candidates: functions/methods with no callers and not HTTP entrypoints. |
 | `find_hotspots` | Most depended-on symbols (highest caller count) — where changes ripple furthest. |
+| `project_graph` | Module/package-level dependency graph — the architecture map above the symbols. |
 | `graph_stats` | File / symbol / edge / language counts. |
 
 The server speaks plain JSON-RPC 2.0 — no proprietary transport, no SDK to audit — over **either stdio or HTTP**. Point a subprocess-style host at `codegraph serve`, or an HTTP host at `codegraph serve --http` (bearer token via `Authorization: Bearer …`, `GET /health` for readiness). Both transports share the exact same dispatch, scope checks, and audit logging.
@@ -165,11 +166,11 @@ The overlay model is the wedge: you get the indexed graph and the audit trail **
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 46 tests
+pytest -q          # 47 tests
 ```
 
 ## License
 
 Apache-2.0. © Cognis Digital.
 
-> Status: v0.1 — runnable and tested. HTTP transport and KG diff are shipped. Roadmap: more languages (Ruby, Kotlin, PHP), incremental per-commit indexing, and a project-graph (module/package) view.
+> Status: v0.1 — runnable and tested. HTTP transport, KG diff, and the project-graph view are shipped. Roadmap: more languages (Ruby, Kotlin, PHP) and incremental per-commit indexing.

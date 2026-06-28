@@ -83,6 +83,18 @@ def test_orphans_excludes_called_and_entrypoints():
     assert ("renderUser", "typescript") in orphans
 
 
+def test_project_graph_modules_and_edges():
+    store, _ = build()
+    pg = store.project_graph()
+    mods = {m["module"] for m in pg["modules"]}
+    # the sample repo's directories become modules
+    assert {"web", "api", "server", "svc", "jvm", "dotnet"} <= mods
+    # the 'web' client module depends (cross-language) on every backend module
+    web_targets = {e["to"] for e in pg["edges"] if e["from"] == "web"}
+    assert {"api", "server", "svc", "jvm", "dotnet"} <= web_targets
+    assert all(e["weight"] >= 1 for e in pg["edges"])
+
+
 def test_reindex_is_idempotent():
     store = Store(":memory:")
     a = index_path(store, SAMPLE)
