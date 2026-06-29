@@ -96,6 +96,22 @@ def cmd_query(args) -> int:
         store.close()
 
 
+def cmd_viz(args) -> int:
+    from .viz import render
+    store = _store(args)
+    try:
+        out = render(store, view=args.view, fmt=args.format,
+                     symbol_id=args.symbol, max_depth=args.max_depth)
+        if args.out:
+            Path(args.out).write_text(out, encoding="utf-8")
+            print(f"wrote {args.view} {args.format} -> {args.out}", file=sys.stderr)
+        else:
+            print(out)
+        return 0
+    finally:
+        store.close()
+
+
 def cmd_serve(args) -> int:
     # HTTP mode serves from a worker thread, so the connection must be usable
     # across threads (requests are still handled one at a time).
@@ -206,6 +222,14 @@ def build_parser() -> argparse.ArgumentParser:
     q7 = qsub.add_parser("hotspots", parents=[db_parent]); q7.add_argument("--limit", type=int, default=20)
     qsub.add_parser("project-graph", parents=[db_parent])
     pq.set_defaults(func=cmd_query)
+
+    pz = sub.add_parser("viz", parents=[db_parent], help="render the graph as Mermaid or Graphviz DOT")
+    pz.add_argument("--view", choices=["project", "impact"], default="project")
+    pz.add_argument("--format", choices=["mermaid", "dot"], default="mermaid")
+    pz.add_argument("--symbol", type=int, default=None, help="symbol id (for --view impact)")
+    pz.add_argument("--max-depth", dest="max_depth", type=int, default=6)
+    pz.add_argument("--out", default=None, help="write to file instead of stdout")
+    pz.set_defaults(func=cmd_viz)
 
     pv = sub.add_parser("serve", parents=[db_parent], help="serve the graph to agents over MCP (stdio or HTTP)")
     pv.add_argument("--token", default=None, help="require this agent token (stdio mode)")

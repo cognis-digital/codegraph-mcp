@@ -49,6 +49,11 @@ codegraph query search loadUser --db graph.db
 codegraph query impact 7 --db graph.db          # transitive callers ("blast radius")
 codegraph query xlang --db graph.db             # cross-language HTTP edges
 
+# 2b. Visualize the graph — Mermaid (renders inline on GitHub) or Graphviz DOT
+codegraph viz --db graph.db --view project --format mermaid
+codegraph viz --db graph.db --view impact --symbol 7 --format mermaid
+codegraph viz --db graph.db --format dot | dot -Tsvg > graph.svg
+
 # 3. Serve it to an agent over MCP — stdio or HTTP
 codegraph token issue ci-agent --scopes read --db graph.db   # prints a bearer token
 codegraph serve --db graph.db --token cg_XXXX                 # stdio
@@ -63,6 +68,44 @@ codegraph audit --db graph.db --verify          # replays the hash chain
 ```
 
 Run `python demo.py` to watch it index the sample repo, resolve cross-language edges, trace a blast radius, and verify the audit chain end to end.
+
+## See the graph
+
+`codegraph viz` renders the module-level architecture as Mermaid — drawn inline by GitHub, GitLab, and Obsidian. This is the actual graph of the bundled polyglot sample repo: solid edges are calls, **dashed gold edges are the cross-language HTTP boundaries** a single-file context window can never see.
+
+```mermaid
+flowchart LR
+    m_api["api<br/>1f · 4s · python"]
+    m_dotnet["dotnet<br/>1f · 4s · csharp"]
+    m_jvm["jvm<br/>1f · 4s · java"]
+    m_server["server<br/>1f · 5s · go"]
+    m_svc["svc<br/>1f · 5s · rust"]
+    m_web["web<br/>1f · 4s · typescript"]
+    m_web -. "HTTP ×2" .-> m_api
+    m_web -. "HTTP ×2" .-> m_dotnet
+    m_web -. "HTTP ×2" .-> m_jvm
+    m_web -. "HTTP ×2" .-> m_server
+    m_web -. "HTTP ×2" .-> m_svc
+    m_api -- "calls ×2" --> m_svc
+    m_jvm -- "calls ×4" --> m_server
+    m_svc -- "calls ×2" --> m_api
+    classDef xlang stroke:#f4b400,stroke-width:3px;
+    class m_api,m_dotnet,m_jvm,m_server,m_svc,m_web xlang;
+```
+
+## Demos
+
+Five runnable scenarios, each targeting a different audience, in [`demos/`](demos/) — run them all with `python demos/run_all.py`:
+
+| Demo | Audience | Shows |
+|---|---|---|
+| [`01_ai_agent_workflow`](demos/01_ai_agent_workflow.py) | AI agent builders | look-before-you-leap: search → callers → callees → blast radius before an edit |
+| [`02_cross_language`](demos/02_cross_language.py) | Polyglot teams | TS→Go/Python/Java/C#/Rust HTTP edges resolved across the language boundary |
+| [`03_impact_and_refactor`](demos/03_impact_and_refactor.py) | Staff engineers | hotspots, dead-code orphans, and blast radius for refactor planning |
+| [`04_audit_and_compliance`](demos/04_audit_and_compliance.py) | Security & compliance | scoped tokens, hash-chained audit, live tamper detection |
+| [`05_visualize_graph`](demos/05_visualize_graph.py) | Architects & reviewers | the architecture map as Mermaid and Graphviz DOT |
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how indexing, the graph store, cross-language resolution, the audit chain, and the MCP server fit together.
 
 ## MCP tools
 
@@ -162,6 +205,6 @@ pytest -q          # 50 tests
 
 ## License
 
-Apache-2.0. © Cognis Digital.
+COCL (Cognis Open Collaboration License). © Cognis Digital.
 
 > Status: v0.1 — runnable and tested. HTTP transport, KG diff, project-graph, and incremental (`--since`) indexing are shipped. Roadmap: more languages (Ruby, Kotlin, PHP) and a watch mode.
