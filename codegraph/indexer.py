@@ -143,7 +143,9 @@ def index_path(store: Store, root: str | Path, actor: str = "indexer") -> IndexS
     root = Path(root).resolve()
     stats = IndexStats()
     if not root.exists():
-        raise FileNotFoundError(root)
+        raise FileNotFoundError(f"index_path: no such directory: {root}")
+    if not root.is_dir():
+        raise NotADirectoryError(f"index_path: not a directory: {root}")
 
     for path in iter_source_files(root):
         _ingest_file(store, root, path, stats)
@@ -155,11 +157,24 @@ def index_path(store: Store, root: str | Path, actor: str = "indexer") -> IndexS
     return stats
 
 
+def _run_git(args: list[str], *, what: str) -> str:
+    """Run a git command, raising a clear RuntimeError if git fails or is absent."""
+    try:
+        proc = subprocess.run(args, check=True, capture_output=True, text=True)
+    except FileNotFoundError as e:  # git not installed / not on PATH
+        raise RuntimeError(f"{what}: git executable not found on PATH") from e
+    except subprocess.CalledProcessError as e:
+        detail = (e.stderr or e.stdout or "").strip()
+        raise RuntimeError(f"{what}: git failed (exit {e.returncode}): {detail}") from e
+    return proc.stdout
+
+
 def changed_files(repo: str | Path, base: str, head: str = "HEAD") -> tuple[list[str], list[str]]:
     """Return (added_or_modified, deleted) paths between two git refs."""
-    out = subprocess.run(
+    out = _run_git(
         ["git", "-C", str(repo), "diff", "--name-status", f"{base}..{head}"],
-        check=True, capture_output=True, text=True).stdout
+        what="index_incremental",
+    )
     am: list[str] = []
     deleted: list[str] = []
     for line in out.splitlines():
@@ -214,6 +229,6 @@ def index_git(store: Store, url: str, ref: Optional[str] = None, actor: str = "i
         if ref:
             cmd += ["--branch", ref]
         cmd += [url, tmp]
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        _run_git(cmd, what=f"index_git({url})")
         store.set_meta("source_url", url)
         return index_path(store, tmp, actor=actor)

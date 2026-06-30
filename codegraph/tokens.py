@@ -58,6 +58,12 @@ class TokenStore:
         self.conn.commit()
 
     def issue(self, label: str, scopes: set[str]) -> tuple[str, TokenInfo]:
+        if not label or not label.strip():
+            raise ValueError("token label must be a non-empty string")
+        scopes = set(scopes)
+        if not scopes:
+            raise ValueError("at least one scope is required (one of: "
+                             f"{sorted(VALID_SCOPES)})")
         bad = scopes - VALID_SCOPES
         if bad:
             raise ValueError(f"unknown scopes: {sorted(bad)}")

@@ -110,13 +110,22 @@ def diff_paths(path_a: str | Path, path_b: str | Path) -> dict:
 def diff_git(repo: str | Path, ref_a: str, ref_b: str) -> dict:
     """Diff two git refs by materializing each into a throwaway worktree."""
     repo = str(repo)
+    if not ref_a or not ref_b:
+        raise ValueError("diff_git: both ref_a and ref_b are required")
     with tempfile.TemporaryDirectory(prefix="cg-a-") as ta, \
             tempfile.TemporaryDirectory(prefix="cg-b-") as tb:
         worktrees = [(ref_a, ta), (ref_b, tb)]
         try:
             for ref, tmp in worktrees:
-                subprocess.run(["git", "-C", repo, "worktree", "add", "--detach", tmp, ref],
-                               check=True, capture_output=True, text=True)
+                try:
+                    subprocess.run(["git", "-C", repo, "worktree", "add", "--detach", tmp, ref],
+                                   check=True, capture_output=True, text=True)
+                except FileNotFoundError as e:
+                    raise RuntimeError("diff_git: git executable not found on PATH") from e
+                except subprocess.CalledProcessError as e:
+                    detail = (e.stderr or e.stdout or "").strip()
+                    raise RuntimeError(
+                        f"diff_git: could not check out ref {ref!r}: {detail}") from e
             return diff_paths(ta, tb)
         finally:
             for _ref, tmp in worktrees:

@@ -17,6 +17,21 @@ SCENARIOS = [
     "03_impact_and_refactor",
     "04_audit_and_compliance",
     "05_visualize_graph",
+    "06_mcp_protocol",
+    "07_scoped_tokens",
+    "08_graph_diff",
+    "09_incremental_index",
+    "10_http_transport",
+    "11_find_references",
+    "12_audit_export",
+    "13_impact_visual",
+    "14_endpoint_inventory",
+    "15_benchmark_recall",
+    "16_agent_safe_edit",
+    "17_dead_code_report",
+    "18_polyglot_symbols",
+    "19_tamper_forensics",
+    "20_module_architecture",
 ]
 
 

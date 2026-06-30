@@ -95,6 +95,10 @@ def dot_project(store: Store) -> str:
 
 def render(store: Store, view: str = "project", fmt: str = "mermaid",
            symbol_id: Optional[int] = None, max_depth: int = 6) -> str:
+    if view not in ("project", "impact"):
+        raise ValueError(f"unknown view {view!r}; expected 'project' or 'impact'")
+    if fmt not in ("mermaid", "dot"):
+        raise ValueError(f"unknown format {fmt!r}; expected 'mermaid' or 'dot'")
     if view == "impact":
         if symbol_id is None:
             raise ValueError("impact view requires --symbol")
