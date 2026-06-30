@@ -11,3 +11,4 @@ venv/
 # local graph databases
 *.db
 codegraph.db
+media/walkthrough.mp4

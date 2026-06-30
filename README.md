@@ -21,6 +21,14 @@ If that's your world, you're in the right place. `codegraph-mcp` gives agents re
 
 ---
 
+## Watch the walkthrough
+
+A full tour — browsing the repo, the setup, the live code graph, and all five demo scenarios running for real (narrated, ~12 min):
+
+[![Watch the codegraph-mcp walkthrough](media/walkthrough-thumb.png)](https://github.com/cognis-digital/codegraph-mcp/releases/download/walkthrough-v1/walkthrough.mp4)
+
+▶ **[Watch the walkthrough (MP4)](https://github.com/cognis-digital/codegraph-mcp/releases/download/walkthrough-v1/walkthrough.mp4)** — click the thumbnail or the link to play.
+
 ## What it does
 
 On every push or re-index, `codegraph-mcp` parses your source and builds a queryable graph of:
